@@ -15,8 +15,8 @@ In sequence the script does the following:
 3) Run parent VM and wait for it to finish.
 4) Compact parent VM's disk. Saves space if you have zeroed out unused sectors of the virtual disk.
 5) Set the parent disk to immutable.
-6) Clone the parent into the child VMs.
-7) Set the parent's disk to NONE, so it is not accidently run.
+6) Clone the parent into the child VMs. No limits of the number imposed by the script.
+7) Set the parent's disk to NONE, so it is not accidently run. It is not removed from disk.
 
 Tested on Ubuntu Mate 20.04 (Focal).
 
