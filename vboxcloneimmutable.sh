@@ -3,24 +3,32 @@
 set -x
 set -e
 
-parentvm="$1"
-
 storageport=0
 storagedevice=0
 storagename="SATA"
 
 
-if [ "${parentvm}" != "" ] ; then
-    shift
+declare -a childvms
+declare -a options
 
-    declare -a childvms
-
-    while [ "$1" != "" ] ; do
+while [ "$1" != "" ] ; do
+    if [ "${1::1}" == "-" ] ; then
+        options+=( "${1:1}" )
+        echo "option: ${1:1}"
+    elif [ "$parentvm" == "" ] ; then
+        parentvm="$1"
+        echo "parent: $1"
+    else
         childvms+=( "$1" )
-        echo $1
-        shift
-    done
+        echo "child: $1"
+    fi
 
+    shift
+done
+
+
+
+if [ "${parentvm}" != "" ] ; then
     for childvm in "${childvms[@]}" ; do
         while true; do
             if ! vboxmanage list vms | grep -q -E "\"${childvm}\"" ; then
@@ -138,6 +146,10 @@ if [ "${parentvm}" != "" ] ; then
         vboxmanage clonevm "${parentvm}" --name "${childvm}" --register
 
         vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+        
+        for option in "${options[@]}" ; do
+            vboxmanage modifyvm "$childvm" $option
+        done
     done
 
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -type f -maxdepth 1 -mindepth 1 -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
