@@ -26,8 +26,6 @@ while [ "$1" != "" ] ; do
     shift
 done
 
-
-
 if [ "${parentvm}" != "" ] ; then
     for childvm in "${childvms[@]}" ; do
         while true; do
@@ -136,19 +134,21 @@ if [ "${parentvm}" != "" ] ; then
         sleep 10s
     done
 
-    vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp"
+    sleep 10s
+    
+    vboxmanage modifymedium "$parentmedium" --compact && sleep 10s && touch -r "$parentmedium" "${parentmedium}.stamp"
 
-    vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
+    vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive && sleep 10s
 
-    vboxmanage modifymedium "${parentmedium}" --type immutable
+    vboxmanage modifymedium "${parentmedium}" --type immutable && sleep 10s
 
     for childvm in "${childvms[@]}" ; do
         vboxmanage clonevm "${parentvm}" --name "${childvm}" --register
 
-        vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+        vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
         
         for option in "${options[@]}" ; do
-            vboxmanage modifyvm "$childvm" $option
+            vboxmanage modifyvm "$childvm" $option && sleep 10s
         done
     done
 
