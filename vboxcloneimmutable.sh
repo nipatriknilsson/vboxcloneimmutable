@@ -109,7 +109,38 @@ if [ "${parentvm}" != "" ] ; then
     vboxmanage modifymedium "${parentmedium}" --type normal
     vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
 
-    vboxmanage startvm "${parentvm}"
+    (
+        while : ; do
+            if flock -w 0 200 ; then
+                memoryguestmb=$(vboxmanage showvminfo "$parentvm"| grep -E "^Memory size[[:space:]]" | tr -d -c '[0-9]')
+                (( memoryguestmb=memoryguestmb+1024 ))
+                
+                memoryhostfree=$(free -m | awk '{print $7}' | awk NF)
+                
+                if [ "$memoryguestmb" -lt "$memoryhostfree" ] ; then
+                    l=$(ps -A -o time,command | grep -i VirtualBoxVM | grep -- "--startvm" | awk '{print $1}' | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }' | sort -V | head -1)
+                    
+                    if [ "$l" == "" ] ; then
+                        break
+                    fi
+                    
+                    if [ "$l" -gt "30" ] ; then
+                        break
+                    fi
+                fi
+                
+                flock -u 200
+            fi
+            
+            sleep 10s
+        done
+        
+        vboxmanage startvm "${parentvm}"
+
+        sleep 30s
+
+        flock -u 200
+    ) 200>/var/lock/vboxcloneimmutable
 
     echo "Waiting for \"${parentvm}\" to power off..."
 
