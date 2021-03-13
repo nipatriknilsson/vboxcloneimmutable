@@ -113,7 +113,7 @@ if [ "${parentvm}" != "" ] ; then
         while : ; do
             if flock -w 0 200 ; then
                 memoryguestmb=$(vboxmanage showvminfo "$parentvm"| grep -E "^Memory size[[:space:]]" | tr -d -c '[0-9]')
-                (( memoryguestmb=memoryguestmb+1024 ))
+                (( memoryguestmb=memoryguestmb+2048 ))
                 
                 memoryhostfree=$(free -m | awk '{print $7}' | awk NF)
                 
@@ -124,7 +124,7 @@ if [ "${parentvm}" != "" ] ; then
                         break
                     fi
                     
-                    if [ "$l" -gt "30" ] ; then
+                    if [ "$l" -gt "60" ] ; then
                         break
                     fi
                 fi
