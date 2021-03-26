@@ -47,13 +47,13 @@ if [ "${parentvm}" != "" ] ; then
                 if [ "$running" == "0" ] ; then
                     break
                 fi
-
+                
     #            break
             fi
-
+            
             sleep 10s
         done
-
+        
         vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete || true
     done
 
@@ -63,6 +63,7 @@ if [ "${parentvm}" != "" ] ; then
         configfile="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)')"
         sed '/<Machine/s/aborted="true"/aborted="false"/' "$configfile" > "${configfile}.newstate"
         mv -f "${configfile}.newstate" "${configfile}"
+        
         break
     fi
 
@@ -95,7 +96,7 @@ if [ "${parentvm}" != "" ] ; then
             break
         fi
 
-        vboxmanage snapshot "${parentvm}" delete "$snapshotdelete"
+        vboxmanage snapshot "${parentvm}" delete "$snapshotdelete" && sleep 10s
     done
 
     while IFS= read f ; do
@@ -108,13 +109,13 @@ if [ "${parentvm}" != "" ] ; then
         vardevice=$(echo "$varportdevice" | awk '{print $2}')
         echo $vardevice
 
-        vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive
+        vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive && sleep 10s
     done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagename})" | grep -i '(UUID:')
 
     parentmedium="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)' | sed 's/\.vbox$/\.vdi/')"
     
     if [ "$parentmedium" == "" ] ; then
-        echo "Couldn't get parentmedium"
+        echo "Couldn't get parent medium"
         exit 255
     fi
 
@@ -125,10 +126,10 @@ if [ "${parentvm}" != "" ] ; then
             break
         fi
 
-        vboxmanage closemedium disk "$childhduuid" --delete
+        vboxmanage closemedium disk "$childhduuid" --delete && sleep 10s
     done
 
-    ( # this lock sequence accepts removal of /var/lock/vboxcloneimmutable if it is locked
+    ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
                 echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- cp -a "${parentmedium}" '{}'
@@ -143,11 +144,37 @@ if [ "${parentvm}" != "" ] ; then
 
     ) 200>/var/lock/vboxcloneimmutable
 
+    ( # removal of /var/lock/vboxcloneimmutable unlocks lock
+        while : ; do
+            if flock -w 0 200 ; then 
+                vboxmanage modifymedium "${parentmedium}" --type normal && sleep 10s
 
-    vboxmanage modifymedium "${parentmedium}" --type normal
-    vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+                flock -u 200
+                
+                break
+            fi
+            
+            sleep 10s
+        done
 
-    (
+    ) 200>/var/lock/vboxcloneimmutable
+
+    ( # removal of /var/lock/vboxcloneimmutable unlocks lock
+        while : ; do
+            if flock -w 0 200 ; then 
+                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
+
+                flock -u 200
+                
+                break
+            fi
+            
+            sleep 10s
+        done
+
+    ) 200>/var/lock/vboxcloneimmutable
+
+    ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
             if flock -w 0 200 ; then
                 memoryguestmb=$(vboxmanage showvminfo "$parentvm"| grep -E "^Memory size[[:space:]]" | tr -d -c '[0-9]')
@@ -162,7 +189,7 @@ if [ "${parentvm}" != "" ] ; then
                         break
                     fi
                     
-                    if [ "$l" -gt "90" ] ; then
+                    if [ "$l" -gt "120" ] ; then
                         break
                     fi
                 fi
@@ -174,9 +201,9 @@ if [ "${parentvm}" != "" ] ; then
         done
         
         vboxmanage startvm "${parentvm}"
-
+        
         sleep 30s
-
+        
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
 
@@ -184,11 +211,11 @@ if [ "${parentvm}" != "" ] ; then
 
     while true ; do
         poweredoff=""
-
+        
         if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
             poweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
         fi
-
+        
         if [ "$poweredoff" == "1" ] ; then
             running=
             running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvm}" || true)
@@ -196,30 +223,41 @@ if [ "${parentvm}" != "" ] ; then
             if [ "$running" == "0" ] ; then
                 break
             fi
-
+            
 #            break
         fi
-
+        
         sleep 10s
     done
 
-    sleep 10s
-    
-    vboxmanage modifymedium "$parentmedium" --compact && sleep 10s && touch -r "$parentmedium" "${parentmedium}.stamp"
-
-    vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive && sleep 10s
-
-    vboxmanage modifymedium "${parentmedium}" --type immutable && sleep 10s
-
-    for childvm in "${childvms[@]}" ; do
-        vboxmanage clonevm "${parentvm}" --name "${childvm}" --register
-
-        vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
-        
-        for option in "${options[@]}" ; do
-            vboxmanage modifyvm "$childvm" $option && sleep 10s
+    ( # removal of /var/lock/vboxcloneimmutable unlocks lock
+        while : ; do
+            if flock -w 0 200 ; then 
+                vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp" && sleep 10s
+                
+                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive && sleep 10s
+                
+                vboxmanage modifymedium "${parentmedium}" --type immutable && sleep 10s
+                
+                for childvm in "${childvms[@]}" ; do
+                    vboxmanage clonevm "${parentvm}" --name "${childvm}" --register && sleep 10s
+                    
+                    vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
+                    
+                    for option in "${options[@]}" ; do
+                        vboxmanage modifyvm "$childvm" $option  && sleep 10s
+                    done
+                done
+                
+                flock -u 200
+                
+                break
+            fi
+            
+            sleep 10s
         done
-    done
+        
+    ) 200>/var/lock/vboxcloneimmutable
 
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -type f -maxdepth 1 -mindepth 1 -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
     
