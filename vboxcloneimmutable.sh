@@ -240,7 +240,7 @@ if [ "${parentvm}" != "" ] ; then
                 vboxmanage modifymedium "${parentmedium}" --type immutable && sleep 10s
                 
                 for childvm in "${childvms[@]}" ; do
-                    vboxmanage clonevm "${parentvm}" --name "${childvm}" --register && sleep 10s
+                    vboxmanage clonevm "${parentvm}" --options=KeepAllMACs,KeepHwUUIDs --name "${childvm}" --register && sleep 10s
                     
                     vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
                     
