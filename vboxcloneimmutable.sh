@@ -22,7 +22,7 @@ while [ "$1" != "" ] ; do
         childvms+=( "$1" )
         echo "child: $1"
     fi
-
+    
     shift
 done
 
@@ -34,7 +34,7 @@ if [ "${parentvm}" != "" ] ; then
             fi
             
             poweredoff=""
-
+            
             if vboxmanage showvminfo "${childvm}" 2>/dev/null 1>&2 ; then
                 poweredoff=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
                 stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
@@ -56,9 +56,9 @@ if [ "${parentvm}" != "" ] ; then
         
         vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete || true
     done
-
+    
     stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
-
+    
     if [ "$stateaborted" == "1" ]; then
         configfile="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)')"
         sed '/<Machine/s/aborted="true"/aborted="false"/' "$configfile" > "${configfile}.newstate"
@@ -66,39 +66,39 @@ if [ "${parentvm}" != "" ] ; then
         
         break
     fi
-
+    
     while true; do
         statepoweredoff=""
         stateaborted=""
-
+        
         if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
             statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
             stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
         fi
-
+        
         if [ "$statepoweredoff" == "1" ]; then
             break
         fi
-
+        
         if [ "$stateaborted" == "1" ]; then
             configfile="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)')"
             sed '/<Machine/s/aborted="true"/aborted="false"/' "$configfile" > "${configfile}.newstate"
             mv -f "${configfile}.newstate" "${configfile}"
             break
         fi
-
+        
         sleep 10s
     done
-
+    
     while true ; do
         snapshotdelete=$(vboxmanage snapshot "${parentvm}" list --machinereadable | grep -o -P  '(?<=CurrentSnapshotUUID=")[0-9a-f\-]+' || echo "")
         if [ "$snapshotdelete" == "" ] ; then
             break
         fi
-
+        
         vboxmanage snapshot "${parentvm}" delete "$snapshotdelete" && sleep 10s
     done
-
+    
     while IFS= read f ; do
         vartype="$(echo "$f" | grep -o -E "^(${storagename})")"
         echo $vartype
@@ -108,32 +108,32 @@ if [ "${parentvm}" != "" ] ; then
         echo $varport
         vardevice=$(echo "$varportdevice" | awk '{print $2}')
         echo $vardevice
-
+        
         vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive && sleep 10s
     done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagename})" | grep -i '(UUID:')
-
+    
     parentmedium="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)' | sed 's/\.vbox$/\.vdi/')"
     
     if [ "$parentmedium" == "" ] ; then
         echo "Couldn't get parent medium"
         exit 255
     fi
-
+    
     while true ; do
         childhduuid=$(vboxmanage showhdinfo "${parentmedium}" | grep -E '^Child UUIDs:' | grep -o -P '[0-9a-f\-]{36}' || echo "")
         
         if [ "$childhduuid" == "" ] ; then
             break
         fi
-
+        
         vboxmanage closemedium disk "$childhduuid" --delete && sleep 10s
     done
-
+    
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
                 echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- cp -a "${parentmedium}" '{}'
-
+                
                 flock -u 200
                 
                 break
@@ -141,14 +141,14 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-
+    
     ) 200>/var/lock/vboxcloneimmutable
-
+    
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
                 vboxmanage modifymedium "${parentmedium}" --type normal && sleep 10s
-
+                
                 flock -u 200
                 
                 break
@@ -156,14 +156,14 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-
+    
     ) 200>/var/lock/vboxcloneimmutable
-
+    
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
                 vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
-
+                
                 flock -u 200
                 
                 break
@@ -171,9 +171,9 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-
+    
     ) 200>/var/lock/vboxcloneimmutable
-
+    
     ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
             if flock -w 0 200 ; then
@@ -206,9 +206,9 @@ if [ "${parentvm}" != "" ] ; then
         
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
-
+    
     echo "Waiting for \"${parentvm}\" to power off..."
-
+    
     while true ; do
         poweredoff=""
         
@@ -229,7 +229,7 @@ if [ "${parentvm}" != "" ] ; then
         
         sleep 10s
     done
-
+    
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
