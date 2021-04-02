@@ -1,0 +1,8 @@
+calculatememoryusage()
+{
+    if [ "$1" != "" ] ; then
+        pstree -p $(ps -A -o pid,command | grep -v grep | grep "$1" | awk '{print $1}') | grep -E -o '\([0-9]+\)$' | tr -c -d '[0-9}\n' | xargs -I '{}' -- cat /proc/{}/smaps | grep -i -E 'Pss' | awk '{print $2}' | awk '{Total+=$1} END {print Total/1024}'
+    fi
+}
+
+

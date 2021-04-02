@@ -7,7 +7,6 @@ storageport=0
 storagedevice=0
 storagename="SATA"
 
-
 declare -a childvms
 declare -a options
 
@@ -141,7 +140,6 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-    
     ) 200>/var/lock/vboxcloneimmutable
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
@@ -156,7 +154,6 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-    
     ) 200>/var/lock/vboxcloneimmutable
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
@@ -171,14 +168,13 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-    
     ) 200>/var/lock/vboxcloneimmutable
     
     ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
             if flock -w 0 200 ; then
                 memoryguestmb=$(vboxmanage showvminfo "$parentvm"| grep -E "^Memory size[[:space:]]" | tr -d -c '[0-9]')
-                (( memoryguestmb=memoryguestmb+1024 ))
+                memoryguestmb=$(echo "(1024+$memoryguestmb*1.1)/1" | bc)
                 
                 memoryhostfree=$(free -m | grep -E '^Mem:' | awk '{print $7}')
                 
@@ -256,7 +252,6 @@ if [ "${parentvm}" != "" ] ; then
             
             sleep 10s
         done
-        
     ) 200>/var/lock/vboxcloneimmutable
     
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -type f -maxdepth 1 -mindepth 1 -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
