@@ -21,9 +21,9 @@ In sequence the script does the following:
 Tested on Ubuntu Mate 20.04 (Focal).
 
 # Examples
-Remove child VMs named "Ubuntu Mate Focal #1", "Ubuntu Mate Focal #2", "Ubuntu Mate Focal #3" and run "Ubuntu Mate Focal". When parent finished running the child VMs are created again, Parent can't be run to avoid accidental run. The children's disks are set immutable.
+Remove child VMs named "Ubuntu Mate Focal #1", "Ubuntu Mate Focal #2", "Ubuntu Mate Focal #3" and run "Ubuntu Mate Focal". When parent finished running the child VMs are created again, Mac addreess 1 is randomized. Parent can't be run to avoid accidental run. The children's disks are set immutable.
 ```
-vboxcloneimmutable.sh "Ubuntu Mate Focal" "Ubuntu Mate Focal #1" "Ubuntu Mate Focal #2" "Ubuntu Mate Focal #3"
+vboxcloneimmutable.sh "Ubuntu Mate Focal" "Ubuntu Mate Focal #1" "Ubuntu Mate Focal #2" "Ubuntu Mate Focal #3" "---macaddress1 auto"
 ```
 
 Another example with three child VMs.
