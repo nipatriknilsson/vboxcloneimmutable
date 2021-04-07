@@ -259,8 +259,7 @@ if [ "${parentvm}" != "" ] ; then
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -type f -maxdepth 1 -mindepth 1 -iname '*.vdi.bak.tmp' | sed "s/\.tmp\$//" | xargs -I '{}' -- mv -f "{}.tmp" '{}'
     
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -type f -maxdepth 1 -mindepth 1 -iname '*.vdi.bak' | LANG=C sort -r | awk '{if(NR>3) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
-    
-    exit 0
 fi
 
+exit 0
 
