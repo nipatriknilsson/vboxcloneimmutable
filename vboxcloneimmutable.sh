@@ -53,7 +53,19 @@ if [ "${parentvm}" != "" ] ; then
             sleep 10s
         done
         
-        vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete || true
+        ( # removal of /var/lock/vboxcloneimmutable unlocks lock
+            while : ; do
+                if flock -w 0 200 ; then 
+                    vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete && sleep 10s || true
+                    
+                    flock -u 200
+                    
+                    break
+                fi
+                
+                sleep 10s
+            done
+        ) 200>/var/lock/vboxcloneimmutable
     done
     
     stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
@@ -196,9 +208,7 @@ if [ "${parentvm}" != "" ] ; then
             sleep 10s
         done
         
-        vboxmanage startvm "${parentvm}"
-        
-        sleep 30s
+        vboxmanage startvm "${parentvm}" && sleep 10s
         
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
