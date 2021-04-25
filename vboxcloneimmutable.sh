@@ -185,7 +185,12 @@ if [ "${parentvm}" != "" ] ; then
     ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
             if flock -w 0 200 ; then
-                memoryguestmb=$(vboxmanage showvminfo "$parentvm"| grep -E "^Memory size[[:space:]]" | tr -d -c '[0-9]')
+                memoryguestmb=$(vboxmanage showvminfo "$parentvm" | grep -E "^Memory size(:)*[[:space:]]" | tr -d -c '[0-9]')
+                
+                if [ "$memoryguestmb" == "" ] ; then
+                    memoryguestmb=$((1024*1024*1024))
+                fi
+                
                 memoryguestmb=$(echo "(1024+$memoryguestmb*1.1)/1" | bc)
                 
                 memoryhostfree=$(free -m | grep -E '^Mem:' | awk '{print $7}')
