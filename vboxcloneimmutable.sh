@@ -256,7 +256,14 @@ if [ "${parentvm}" != "" ] ; then
                     vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
                     
                     for option in "${options[@]}" ; do
-                        vboxmanage modifyvm "$childvm" $option  && sleep 10s
+                        if echo "$option" | grep -q '{}' ; then
+                            s="$(echo "$option" | sed "s/{}/${childvm}/")"
+                            eval vboxmanage "$s"
+                            sleep 10s
+                        else
+                            vboxmanage modifyvm "$childvm" $option
+                            sleep 10s
+                        fi
                     done
                 done
                 
