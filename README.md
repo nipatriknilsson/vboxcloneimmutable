@@ -16,7 +16,7 @@ In sequence the script does the following:
 4) Compact parent VM's disk. Saves space if you have zeroed out unused sectors of the virtual disk.
 5) Set the parent disk to immutable.
 6) Clone the parent into the child VMs. No limits of the number imposed by the script.
-7) Set the parent's disk to NONE, so it is not accidentally run. It is not removed from disk.
+7) Set the parent VM's disk to NONE, so it is not accidentally run. It is not removed from the host's file system.
 
 Tested on Ubuntu Mate 20.04 (Focal).
 
@@ -43,5 +43,5 @@ vboxcloneimmutable.sh "Shellter" "Shellter #1" "---nic1 none" "---nic2 hostonly"
 
 You can have the "{}" option to insert the cloned childvm's name. This translates to ```vboxmanage sharedfolder add 'Shellter #1' --name R: --hostpath / --readonly --automount```
 ```
-vboxcloneimmutable.sh "Shellter" "Shellter #1" -"sharedfolder add \"{}\" --name \"R:\" --hostpath / --readonly --automount" 
+vboxcloneimmutable.sh "Shellter" "Shellter #1" -"sharedfolder add \"{}\" --name \"root\" --hostpath / --readonly --automount --auto-mount-point=R:" 
 ```
