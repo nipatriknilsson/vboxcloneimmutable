@@ -255,6 +255,11 @@ if [ "${parentvm}" != "" ] ; then
                     
                     vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
                     
+                    diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagename}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
+                    diskdir="$(dirname "$diskfile")"
+                    rm -f "${diskdir}/"*".bak"
+                    cp -a "${diskfile}" "${diskfile}.bak"
+                    
                     for option in "${options[@]}" ; do
                         if echo "$option" | grep -q '{}' ; then
                             s="$(echo "$option" | sed "s/{}/${childvm}/")"
