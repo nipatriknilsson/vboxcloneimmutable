@@ -257,7 +257,7 @@ if [ "${parentvm}" != "" ] ; then
                     
                     diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagename}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
                     diskdir="$(dirname "$diskfile")"
-                    rm -f "${diskdir}/"*".bak"
+                    rm -f "${diskdir}/"*".vdi.bak"
                     cp -a "${diskfile}" "${diskfile}.bak"
                     
                     for option in "${options[@]}" ; do
