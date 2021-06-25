@@ -7,6 +7,8 @@ storageport=0
 storagedevice=0
 storagename="SATA"
 
+vboxbugdelay=20s
+
 declare -a childvms
 declare -a options
 
@@ -50,20 +52,21 @@ if [ "${parentvm}" != "" ] ; then
     #            break
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
         
         ( # removal of /var/lock/vboxcloneimmutable unlocks lock
             while : ; do
                 if flock -w 0 200 ; then 
-                    vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete && sleep 10s || true
+                    vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete || true
+                    sleep ${vboxbugdelay}
                     
                     flock -u 200
                     
                     break
                 fi
                 
-                sleep 10s
+                sleep ${vboxbugdelay}
             done
         ) 200>/var/lock/vboxcloneimmutable
     done
@@ -98,7 +101,7 @@ if [ "${parentvm}" != "" ] ; then
             break
         fi
         
-        sleep 10s
+        sleep ${vboxbugdelay}
     done
     
     while true ; do
@@ -107,7 +110,8 @@ if [ "${parentvm}" != "" ] ; then
             break
         fi
         
-        vboxmanage snapshot "${parentvm}" delete "$snapshotdelete" && sleep 10s
+        vboxmanage snapshot "${parentvm}" delete "$snapshotdelete"
+        sleep ${vboxbugdelay}
     done
     
     while IFS= read f ; do
@@ -120,7 +124,8 @@ if [ "${parentvm}" != "" ] ; then
         vardevice=$(echo "$varportdevice" | awk '{print $2}')
         echo $vardevice
         
-        vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive && sleep 10s
+        vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive
+        sleep ${vboxbugdelay}
     done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagename})" | grep -i '(UUID:')
     
     parentmedium="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)' | sed 's/\.vbox$/\.vdi/')"
@@ -137,7 +142,8 @@ if [ "${parentvm}" != "" ] ; then
             break
         fi
         
-        vboxmanage closemedium disk "$childhduuid" --delete && sleep 10s
+        vboxmanage closemedium disk "$childhduuid" --delete
+        sleep ${vboxbugdelay}
     done
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
@@ -150,35 +156,37 @@ if [ "${parentvm}" != "" ] ; then
                 break
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
     ) 200>/var/lock/vboxcloneimmutable
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
-                vboxmanage modifymedium "${parentmedium}" --type normal && sleep 10s
+                vboxmanage modifymedium "${parentmedium}" --type normal
+                sleep ${vboxbugdelay}
                 
                 flock -u 200
                 
                 break
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
     ) 200>/var/lock/vboxcloneimmutable
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
-                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
+                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+                sleep ${vboxbugdelay}
                 
                 flock -u 200
                 
                 break
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
     ) 200>/var/lock/vboxcloneimmutable
     
@@ -210,10 +218,11 @@ if [ "${parentvm}" != "" ] ; then
                 flock -u 200
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
         
-        vboxmanage startvm "${parentvm}" && sleep 10s
+        vboxmanage startvm "${parentvm}"
+        sleep ${vboxbugdelay}
         
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
@@ -238,22 +247,27 @@ if [ "${parentvm}" != "" ] ; then
 #            break
         fi
         
-        sleep 10s
+        sleep ${vboxbugdelay}
     done
     
     ( # removal of /var/lock/vboxcloneimmutable unlocks lock
         while : ; do
             if flock -w 0 200 ; then 
-                vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp" && sleep 10s
+                vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp"
+                sleep ${vboxbugdelay}
                 
-                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive && sleep 10s
+                vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
+                sleep ${vboxbugdelay}
                 
-                vboxmanage modifymedium "${parentmedium}" --type immutable && sleep 10s
+                vboxmanage modifymedium "${parentmedium}" --type immutable
+                sleep ${vboxbugdelay}
                 
                 for childvm in "${childvms[@]}" ; do
-                    vboxmanage clonevm "${parentvm}" --options=KeepAllMACs,KeepHwUUIDs --name "${childvm}" --register && sleep 10s
+                    vboxmanage clonevm "${parentvm}" --options=KeepAllMACs,KeepHwUUIDs --name "${childvm}" --register
+                    sleep ${vboxbugdelay}
                     
-                    vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}" && sleep 10s
+                    vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+                    sleep ${vboxbugdelay}
                     
                     diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagename}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
                     diskdir="$(dirname "$diskfile")"
@@ -264,10 +278,10 @@ if [ "${parentvm}" != "" ] ; then
                         if echo "$option" | grep -q '{}' ; then
                             s="$(echo "$option" | sed "s/{}/${childvm}/")"
                             eval vboxmanage "$s"
-                            sleep 10s
+                            sleep ${vboxbugdelay}
                         else
                             vboxmanage modifyvm "$childvm" $option
-                            sleep 10s
+                            sleep ${vboxbugdelay}
                         fi
                     done
                 done
@@ -277,7 +291,7 @@ if [ "${parentvm}" != "" ] ; then
                 break
             fi
             
-            sleep 10s
+            sleep ${vboxbugdelay}
         done
     ) 200>/var/lock/vboxcloneimmutable
     
