@@ -189,7 +189,7 @@ if [ "${parentvm}" != "" ] ; then
     
     set +x
     
-    echo "Waiting for \"${parentvm}\" to be assigned a memory share..."
+    echo "Waiting for VM \"${parentvm}\" to be assigned a memory share..."
     
     ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
@@ -228,7 +228,7 @@ if [ "${parentvm}" != "" ] ; then
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
     
-    echo "Waiting for \"${parentvm}\" to power off..."
+    echo "Waiting for VM \"${parentvm}\" to power off..."
     
     while true ; do
         poweredoff=""
