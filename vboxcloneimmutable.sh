@@ -189,7 +189,7 @@ if [ "${parentvm}" != "" ] ; then
     
     set +x
     
-    echo "Waiting for \"${parentvm}\" to assign its memory share..."
+    echo "Waiting for \"${parentvm}\" to be assigned a memory share..."
     
     ( # A Virtualbox VM does not allocate all memory immediately
         while : ; do
