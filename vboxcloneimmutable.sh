@@ -36,15 +36,16 @@ if [ "${parentvm}" != "" ] ; then
             
             while true; do
                 
-                poweredoff=""
+                statepoweredoff=""
                 stateaborted=""
                 
                 if vboxmanage showvminfo "${childvm}" 2>/dev/null 1>&2 ; then
-                    poweredoff=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
+                    statepoweredoff=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
                     stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
+                    statesaved=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+saved" || true)
                 fi
                 
-                if [ "$poweredoff" == "1" ] || [ "$stateaborted" == "1" ] ; then
+                if [ "$statepoweredoff" == "1" ] || [ "$stateaborted" == "1" ] ; then
                     running=
                     running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${childvm}" || true)
                     
@@ -53,6 +54,8 @@ if [ "${parentvm}" != "" ] ; then
                     fi
                     
                     break
+                elif [ "$statesaved" == "1" ] ; then
+                    vboxmanage discardstate "$childvm"
                 fi
                 
                 if ! vboxmanage list vms | grep -q -E "\"${childvm}\"" ; then
@@ -177,8 +180,8 @@ if [ "${parentvm}" != "" ] ; then
         flock 200
         
         sleep ${vboxbugdelay}
-        echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- cp -a "${parentmedium}" '{}'
-
+        echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress "${parentmedium}" '{}'
+        
         sleep ${vboxbugdelay}
         vboxmanage modifymedium "${parentmedium}" --type normal
         
@@ -231,11 +234,11 @@ if [ "${parentvm}" != "" ] ; then
     echo "Waiting for VM \"${parentvm}\" to power off..."
     
     while true ; do
-        poweredoff=""
+        statepoweredoff=""
         stateaborted=""
         
         if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
-            poweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
+            statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
             stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
         fi
         
@@ -244,7 +247,7 @@ if [ "${parentvm}" != "" ] ; then
             exit 255
         fi
         
-        if [ "$poweredoff" == "1" ] ; then
+        if [ "$statepoweredoff" == "1" ] ; then
             running=
             running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvm}" || true)
             
