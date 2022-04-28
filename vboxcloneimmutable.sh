@@ -5,7 +5,7 @@ set -e
 
 storageport=0
 storagedevice=0
-storagename="SATA"
+storagectl="IDE"
 
 vboxbugdelay=10s
 
@@ -15,7 +15,29 @@ declare -a options
 while [ "$1" != "" ] ; do
     if [ "${1::1}" == "-" ] ; then
         options+=( "${1:1}" )
-        echo "option: ${1:1}"
+        echo "option vbox: ${1:1}"
+    elif [ "${1::1}" == "+" ] ; then
+        case "${1:1}" in
+            storageport=*)
+                storageport="${1:1}"
+                storageport=${storageport:$(expr index "$storageport" "=")}
+                ;;
+                
+            storagedevice=*)
+                storagedevice="${1:1}"
+                storagedevice=${storagedevice:$(expr index "$storagedevice" "=")}
+                ;;
+                
+            storagectl=*)
+                storagectl="${1:1}"
+                storagectl=${storagectl:$(expr index "$storagectl" "=")}
+                ;;
+                
+            *)
+                echo "No such option!"
+                exit 255
+        esac
+        echo "option internal: $1"
     elif [ "$parentvm" == "" ] ; then
         parentvm="$1"
         echo "parent: $1"
@@ -134,7 +156,7 @@ if [ "${parentvm}" != "" ] ; then
         sleep ${vboxbugdelay}
         
         while IFS= read f ; do
-            vartype="$(echo "$f" | grep -o -E "^(${storagename})")"
+            vartype="$(echo "$f" | grep -o -E "^(${storagectl})")"
             echo $vartype
             varportdevice="$(echo "$f" | grep -o -i -E '\(.*\):' | tr -c '0123456789' ' ')"
             echo $varportdevice
@@ -145,7 +167,7 @@ if [ "${parentvm}" != "" ] ; then
             
             vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive
             sleep ${vboxbugdelay}
-        done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagename})" | grep -i '(UUID:')
+        done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagectl})" | grep -i '(UUID:')
     ) 200>/var/lock/vboxcloneimmutable
     
     parentmedium="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)' | sed 's/\.vbox$/\.vdi/')"
@@ -186,7 +208,10 @@ if [ "${parentvm}" != "" ] ; then
         vboxmanage modifymedium "${parentmedium}" --type normal
         
         sleep ${vboxbugdelay}
-        vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+        vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --medium emptydrive
+        
+        sleep ${vboxbugdelay}
+        vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
         
     ) 200>/var/lock/vboxcloneimmutable
     
@@ -270,7 +295,7 @@ if [ "${parentvm}" != "" ] ; then
         vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp"
         
         sleep ${vboxbugdelay}
-        vboxmanage storageattach "${parentvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
+        vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
         
         sleep ${vboxbugdelay}
         vboxmanage modifymedium "${parentmedium}" --type immutable
@@ -280,11 +305,11 @@ if [ "${parentvm}" != "" ] ; then
             vboxmanage clonevm "${parentvm}" --options=KeepAllMACs,KeepHwUUIDs --name "${childvm}" --register
             
             sleep ${vboxbugdelay}
-            vboxmanage storageattach "${childvm}" --storagectl "${storagename}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
+            vboxmanage storageattach "${childvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
             
             for (( i=0 ; i<10 ; i++ )) ; do
                 sleep ${vboxbugdelay}
-                diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagename}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
+                diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagectl}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
                 
                 if [ "$diskfile" != "" ] ; then
                     break

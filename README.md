@@ -4,10 +4,15 @@ The vboxcloneimmutable.sh script is made to simplify creation of VirtualBox chil
 
 Syntax of calling vboxcloneimmutable.sh is
 ```
-vboxcloneimmutable.sh {parent vm} [child vm_1] [child vm_2] [-options]
+vboxcloneimmutable.sh {parent vm} [child vm_1] [child vm_2] [-optionstovbox] [+optionstoscript]
 ```
 
-The disk's interface is named SCSI.
+These are optionstoscript options
++storageport=<number> # example: +storageport=0
++storagedevice=<number> # example: +storagedevice=1
++storagectl=<name> # example: +storagectl=SATA
+
+The disk's interface is named IDE by default and disk attached to storageport 0 and storagedevice 0:
 
 In sequence the script does the following:
 1) Wait for child VMs and delete them when they are not running.
@@ -31,6 +36,11 @@ Another example with three child VMs.
 vboxcloneimmutable.sh "Kali Linux" "Kali Linux #1" "Kali Linux #2" "Kali Linux #3"
 ```
 
+Example with storage naming control.
+```
+vboxcloneimmutable.sh +storageport=0 +storagedevice=0 +storagectl="SATA" "Kali Linux" "Kali Linux #1" "Kali Linux #2" "Kali Linux #3"
+```
+
 Example with one child VM.
 ```
 vboxcloneimmutable.sh "Shellter" "Shellter #1"
@@ -45,3 +55,4 @@ You can have the "{}" option to insert the cloned childvm's name. This translate
 ```
 vboxcloneimmutable.sh "Shellter" "Shellter #1" -"sharedfolder add \"{}\" --name \"root\" --hostpath / --readonly --automount --auto-mount-point=R:" 
 ```
+
