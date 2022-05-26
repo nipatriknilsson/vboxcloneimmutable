@@ -7,7 +7,7 @@ storageport=0
 storagedevice=0
 storagectl="IDE"
 
-vboxbugdelay=10s
+#vboxbugdelay=10s
 
 declare -a childvms
 declare -a options
@@ -49,51 +49,100 @@ while [ "$1" != "" ] ; do
     shift
 done
 
-if [ "${parentvm}" != "" ] ; then
-    (
-        flock 200
+function sleepbuggyvboxdelay()
+{
+    while true ; do
+        killall VirtualBox 2>/dev/null || true
         
-        for childvm in "${childvms[@]}" ; do
-            sleep ${vboxbugdelay}
+        sleep 1s
+        
+        if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBoxVM' | awk '{print $1}' | grep -v -E '^-' | wc -l)" != "0" ]; then
+            continue
+        fi
+        
+        if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBox[[:blank:]]*$' | wc -l)" != "0" ] ; then
+            if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBox[[:blank:]]*$' | awk '{print $1}' | grep -v -E 'do_pol' | wc -l)" != "0" ] ; then
+                continue
+            fi
+        fi
+        
+        break
+    done
+}
+
+if [ "${parentvm}" != "" ] ; then
+    flagfile=$(mktemp)
+    
+    # Wait for parentvm
+    while [ -f $flagfile ] ; do
+        (
+            flock 200
             
-            while true; do
+            sleepbuggyvboxdelay
+            
+            statepoweredoff=""
+            stateaborted=""
+            statesaved=""
+            running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvm}" || true)
+            
+            if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
+                statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
+                stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
+                statesaved=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+saved" || true)
+            fi
+            
+            if [ "$statesaved" == "1" ] ; then
+                vboxmanage discardstate "$parentvm"
+            elif [ "$running" == "0" ] ; then
+                rm -f $flagfile
+            fi
+        ) 200>/var/lock/vboxcloneimmutable
+        
+        if [ -f $flagfile ] ; then
+            sleep 10s
+        fi
+    done
+    
+    # Wait for childvm
+    for childvm in "${childvms[@]}" ; do
+        flagfile=$(mktemp)
+        
+        while [ -f $flagfile ] ; do
+            (
+                flock 200
+                
+                sleepbuggyvboxdelay
                 
                 statepoweredoff=""
                 stateaborted=""
+                statesaved=""
+                running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${childvm}" || true)
                 
                 if vboxmanage showvminfo "${childvm}" 2>/dev/null 1>&2 ; then
                     statepoweredoff=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
-                    stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
+                    stateaborted=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
                     statesaved=$(vboxmanage showvminfo "${childvm}" | grep -E -c -i "State:[[:space:]]+saved" || true)
                 fi
                 
-                if [ "$statepoweredoff" == "1" ] || [ "$stateaborted" == "1" ] ; then
-                    running=
-                    running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${childvm}" || true)
-                    
-                    if [ "$running" == "0" ] ; then
-                        break
-                    fi
-                    
-                    break
-                elif [ "$statesaved" == "1" ] ; then
+                if [ "$statesaved" == "1" ] ; then
                     vboxmanage discardstate "$childvm"
+                elif [ "$running" == "0" ] ; then
+                    rm -f $flagfile
                 fi
-                
-                if ! vboxmanage list vms | grep -q -E "\"${childvm}\"" ; then
-                    break
-                fi
-                
-                sleep ${vboxbugdelay}
-            done
+            ) 200>/var/lock/vboxcloneimmutable
+            
+            if [ -f $flagfile ] ; then
+                sleep 10s
+            fi
         done
-    ) 200>/var/lock/vboxcloneimmutable
+    done
     
+    # delete parent snapshot
     (
         flock 200
         
         while true ; do
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
             
             snapshotdelete=$(vboxmanage snapshot "${parentvm}" list --machinereadable | grep -o -P  '(?<=CurrentSnapshotUUID=")[0-9a-f\-]+' || echo "")
             if [ "$snapshotdelete" == "" ] ; then
@@ -101,23 +150,24 @@ if [ "${parentvm}" != "" ] ; then
             fi
             
             vboxmanage snapshot "${parentvm}" delete "$snapshotdelete"
-            
         done
     ) 200>/var/lock/vboxcloneimmutable
     
+    # delete all childvms
     (
         flock 200
         
         for childvm in "${childvms[@]}" ; do
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
             
             vboxmanage list vms | grep -q -E "\"${childvm}\"" && vboxmanage unregistervm "${childvm}" --delete || true
         done
     ) 200>/var/lock/vboxcloneimmutable
     
+    # Remove parent's state aborted flag
     (
         flock 200
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         
         stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
         
@@ -128,32 +178,38 @@ if [ "${parentvm}" != "" ] ; then
         fi
     ) 200>/var/lock/vboxcloneimmutable
     
-    while true; do
-        statepoweredoff=""
-        stateaborted=""
-        
-        if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
-            statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
-            stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
-        fi
-        
-        if [ "$statepoweredoff" == "1" ]; then
-            break
-        fi
-        
-        if [ "$stateaborted" == "1" ]; then
-            configfile="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)')"
-            sed '/<Machine/s/aborted="true"/aborted="false"/' "$configfile" > "${configfile}.newstate"
-            mv -f "${configfile}.newstate" "${configfile}"
-            break
-        fi
-        
-        sleep ${vboxbugdelay}
-    done
-    
+    # remove children's state aborted flag
     (
         flock 200
-        sleep ${vboxbugdelay}
+        
+        while true; do
+            sleepbuggyvboxdelay
+            
+            statepoweredoff=""
+            stateaborted=""
+            
+            if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
+                statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
+                stateaborted=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+aborted" || true)
+            fi
+            
+            if [ "$statepoweredoff" == "1" ]; then
+                break
+            fi
+            
+            if [ "$stateaborted" == "1" ]; then
+                configfile="$(vboxmanage showvminfo "${parentvm}" | grep -o -P '^Config file:[[:space:]]+\K.*(\.vbox)')"
+                sed '/<Machine/s/aborted="true"/aborted="false"/' "$configfile" > "${configfile}.newstate"
+                mv -f "${configfile}.newstate" "${configfile}"
+                break
+            fi
+        done
+    ) 200>/var/lock/vboxcloneimmutable
+    
+    # detach hard disk from parent
+    (
+        flock 200
+        sleepbuggyvboxdelay
         
         while IFS= read f ; do
             vartype="$(echo "$f" | grep -o -E "^(${storagectl})")"
@@ -166,7 +222,7 @@ if [ "${parentvm}" != "" ] ; then
             echo $vardevice
             
             vboxmanage storageattach "${parentvm}" --storagectl "${vartype}" --port ${varport} --device ${vardevice} --type hdd --medium emptydrive
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
         done < <(vboxmanage showvminfo "${parentvm}" | grep -E "^(${storagectl})" | grep -i '(UUID:')
     ) 200>/var/lock/vboxcloneimmutable
     
@@ -181,12 +237,13 @@ if [ "${parentvm}" != "" ] ; then
         echo "No parent medium"
         exit 255
     fi
-
+    
+    # close and delete all children's harddisks
     (
         flock 200
-        sleep ${vboxbugdelay}
         
         while true ; do
+            sleepbuggyvboxdelay
             childhduuid=$(vboxmanage showhdinfo "${parentmedium}" | grep -E '^Child UUIDs:' | grep -o -P '[0-9a-f\-]{36}' || echo "")
             
             if [ "$childhduuid" == "" ] ; then
@@ -194,23 +251,23 @@ if [ "${parentvm}" != "" ] ; then
             fi
             
             vboxmanage closemedium disk "$childhduuid" --delete
-            sleep ${vboxbugdelay}
         done
     ) 200>/var/lock/vboxcloneimmutable
     
+    # make a backup of parent's harddisk
     (
         flock 200
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress "${parentmedium}" '{}'
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage modifymedium "${parentmedium}" --type normal
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --medium emptydrive
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
         
     ) 200>/var/lock/vboxcloneimmutable
@@ -247,11 +304,12 @@ if [ "${parentvm}" != "" ] ; then
                 flock -u 200
             fi
             
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
+            sleep 10s
         done
         
         vboxmanage startvm "${parentvm}"
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         
         flock -u 200
     ) 200>/var/lock/vboxcloneimmutable
@@ -283,32 +341,33 @@ if [ "${parentvm}" != "" ] ; then
 #            break
         fi
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
     done
     
     set -x
     
+    # compact parent's hard disk, attach an immutable copy to each created child and apply all options on the command line for the childvm
     (
         flock 200
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp"
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
         
-        sleep ${vboxbugdelay}
+        sleepbuggyvboxdelay
         vboxmanage modifymedium "${parentmedium}" --type immutable
         
         for childvm in "${childvms[@]}" ; do
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
             vboxmanage clonevm "${parentvm}" --options=KeepAllMACs,KeepHwUUIDs --name "${childvm}" --register
             
-            sleep ${vboxbugdelay}
+            sleepbuggyvboxdelay
             vboxmanage storageattach "${childvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
             
             for (( i=0 ; i<10 ; i++ )) ; do
-                sleep ${vboxbugdelay}
+                sleepbuggyvboxdelay
                 diskfile="$(vboxmanage showvminfo "${childvm}" --machinereadable | grep -E "\"${storagectl}-${storageport}-${storagedevice}\"" | grep -o -P '(?<==")[^"]+')"
                 
                 if [ "$diskfile" != "" ] ; then
@@ -326,7 +385,7 @@ if [ "${parentvm}" != "" ] ; then
             cp -a "${diskfile}" "${diskfile}.bak"
             
             for option in "${options[@]}" ; do
-                sleep ${vboxbugdelay}
+                sleepbuggyvboxdelay
                 
                 if echo "$option" | grep -q '{}' ; then
                     s="$(echo "$option" | sed "s/{}/${childvm}/")"
@@ -338,6 +397,7 @@ if [ "${parentvm}" != "" ] ; then
         done
     ) 200>/var/lock/vboxcloneimmutable
     
+    # We save maximum three copies parentvm hard disk. Temp files are removed.
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
     
     dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | sed "s/\.tmp\$//" | xargs -I '{}' -- mv -f "{}.tmp" '{}'
