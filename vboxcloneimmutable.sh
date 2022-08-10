@@ -285,7 +285,7 @@ if [ "${parentvm}" != "" ] ; then
                     memoryguestmb=$((1024*1024*1024))
                 fi
                 
-                memoryguestmb=$(echo "(2048+$memoryguestmb*1.1)/1" | bc)
+                memoryguestmb=$(echo "(3*1024+$memoryguestmb*1.1)/1" | bc)
                 
                 memoryhostfree=$(free -m | grep -E '^Mem:' | awk '{print $7}')
                 
