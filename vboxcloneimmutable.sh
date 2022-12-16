@@ -7,6 +7,10 @@ storageport=0
 storagedevice=0
 storagectl="IDE"
 
+vdibackupstokeep=1
+
+vdibackupdir=""
+
 #vboxbugdelay=10s
 
 declare -a childvms
@@ -33,6 +37,20 @@ while [ "$1" != "" ] ; do
                 storagectl=${storagectl:$(expr index "$storagectl" "=")}
                 ;;
                 
+            vdibackupstokeep=*)
+                vdibackupstokeep="${1:1}"
+                vdibackupstokeep=${vdibackupstokeep:$(expr index "$vdibackupstokeep" "=")}
+                vdibackupstokeep=$(echo "$vdibackupstokeep" | bc 2>/dev/null)
+                if [ "$vdibackupstokeep" == "" ] || [ "$vdibackupstokeep" -lt "0" ]; then
+                    vdibackupstokeep=1
+                fi
+                ;;
+                
+            vdibackupdir=*)
+                vdibackupdir="${1:1}"
+                vdibackupdir=${vdibackupdir:$(expr index "$vdibackupdir" "=")}
+                ;;
+                
             *)
                 echo "No such option!"
                 exit 255
@@ -57,11 +75,13 @@ function sleepbuggyvboxdelay()
         sleep 1s
         
         if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBoxVM' | awk '{print $1}' | grep -v -E '^-' | wc -l)" != "0" ]; then
+            sleep 5s
             continue
         fi
         
         if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBox[[:blank:]]*$' | wc -l)" != "0" ] ; then
             if [ "$(ps -A -o wchan,command | grep -v grep | grep -i -E '/VirtualBox[[:blank:]]*$' | awk '{print $1}' | grep -v -E 'do_pol' | wc -l)" != "0" ] ; then
+                sleep 5s
                 continue
             fi
         fi
@@ -138,20 +158,22 @@ if [ "${parentvm}" != "" ] ; then
     done
     
     # delete parent snapshot
-    (
-        flock 200
-        
-        while true ; do
-            sleepbuggyvboxdelay
+    #if [ "$vdibackupstokeep" != "0" ] ; then
+        (
+            flock 200
             
-            snapshotdelete=$(vboxmanage snapshot "${parentvm}" list --machinereadable | grep -o -P  '(?<=CurrentSnapshotUUID=")[0-9a-f\-]+' || echo "")
-            if [ "$snapshotdelete" == "" ] ; then
-                break
-            fi
-            
-            vboxmanage snapshot "${parentvm}" delete "$snapshotdelete"
-        done
-    ) 200>/var/lock/vboxcloneimmutable
+            while true ; do
+                sleepbuggyvboxdelay
+                
+                snapshotdelete=$(vboxmanage snapshot "${parentvm}" list --machinereadable | grep -o -P  '(?<=CurrentSnapshotUUID=")[0-9a-f\-]+' || echo "")
+                if [ "$snapshotdelete" == "" ] ; then
+                    break
+                fi
+                
+                vboxmanage snapshot "${parentvm}" delete "$snapshotdelete"
+            done
+        ) 200>/var/lock/vboxcloneimmutable
+    #fi
     
     # delete all childvms
     (
@@ -238,6 +260,10 @@ if [ "${parentvm}" != "" ] ; then
         exit 255
     fi
     
+    if [ "$vdibackupdir" == "" ] ; then
+        vdibackupdir="$(dirname "$vdibackupdir")"
+    fi
+    
     # close and delete all children's harddisks
     (
         flock 200
@@ -258,8 +284,10 @@ if [ "${parentvm}" != "" ] ; then
     (
         flock 200
         
-        sleepbuggyvboxdelay
-        echo "${parentmedium}" | sed "s/\.vdi\$/\_$(date +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress "${parentmedium}" '{}'
+        if [ "$vdibackupstokeep" != "0" ] ; then
+            sleepbuggyvboxdelay
+            echo "${vdibackupdir}/$(basename "$parentmedium")" | sed "s/\.vdi\$/\_$(date -r "${parentmedium}" +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress "${parentmedium}" '{}'
+        fi
         
         sleepbuggyvboxdelay
         vboxmanage modifymedium "${parentmedium}" --type normal
@@ -270,6 +298,10 @@ if [ "${parentvm}" != "" ] ; then
         sleepbuggyvboxdelay
         vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium "${parentmedium}"
         
+        #if [ "$vdibackupstokeep" == "0" ] ; then
+            #sleepbuggyvboxdelay
+            #vboxmanage snapshot  "${parentvm}" take "$(date +%Y%m%d-%H%M%S)" --description="Before upgrade"
+        #fi
     ) 200>/var/lock/vboxcloneimmutable
     
     set +x
@@ -285,7 +317,7 @@ if [ "${parentvm}" != "" ] ; then
                     memoryguestmb=$((1024*1024*1024))
                 fi
                 
-                memoryguestmb=$(echo "(3*1024+$memoryguestmb*1.1)/1" | bc)
+                memoryguestmb=$(echo "(4*1024+$memoryguestmb*1.1)/1" | bc)
                 
                 memoryhostfree=$(free -m | grep -E '^Mem:' | awk '{print $7}')
                 
@@ -353,11 +385,18 @@ if [ "${parentvm}" != "" ] ; then
         sleepbuggyvboxdelay
         vboxmanage modifymedium "$parentmedium" --compact && touch -r "$parentmedium" "${parentmedium}.stamp"
         
+        #if [ "$vdibackupstokeep" == "0" ] ; then
+            #sleepbuggyvboxdelay
+            #vboxmanage snapshot  "${parentvm}" take "$(date +%Y%m%d-%H%M%S)" --description="After upgrade"
+        #fi
+        
         sleepbuggyvboxdelay
         vboxmanage storageattach "${parentvm}" --storagectl "${storagectl}" --port ${storageport} --device ${storagedevice} --type hdd --medium emptydrive
         
-        sleepbuggyvboxdelay
-        vboxmanage modifymedium "${parentmedium}" --type immutable
+        #if [ "$vdibackupstokeep" != "0" ] ; then
+            sleepbuggyvboxdelay
+            vboxmanage modifymedium "${parentmedium}" --type immutable
+        #fi
         
         for childvm in "${childvms[@]}" ; do
             sleepbuggyvboxdelay
@@ -397,12 +436,20 @@ if [ "${parentvm}" != "" ] ; then
         done
     ) 200>/var/lock/vboxcloneimmutable
     
-    # We save maximum three copies parentvm hard disk. Temp files are removed.
-    dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
+    # We save maximum $vdibackupstokeep copies of parentvm hard disk. Temp files are removed.
+    #dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
     
-    dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | sed "s/\.tmp\$//" | xargs -I '{}' -- mv -f "{}.tmp" '{}'
+    #dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak.tmp' | sed "s/\.tmp\$//" | xargs -I '{}' -- mv -f "{}.tmp" '{}'
     
-    dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak' | LANG=C sort -r | awk '{if(NR>3) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
+    #dirname "${parentmedium}" | xargs -I '{}' -- find '{}' -maxdepth 1 -mindepth 1  -type f -iname '*.vdi.bak' | LANG=C sort -r | awk '{if(NR>'$vdibackupstokeep') { print $0; } }' | xargs -I '{}' -- rm -f '{}'
+    
+    basenamenoextension="$(basename "$parentmedium" | sed 's/\.vdi//')"
+    
+    find "$vdibackupdir" -maxdepth 1 -mindepth 1  -type f -name "$basenamenoextension"'*.vdi.bak.tmp' | LANG=C sort -r | awk '{if(NR>1) { print $0; } }' | xargs -I '{}' -- rm -f '{}'
+    
+    find "$vdibackupdir" -maxdepth 1 -mindepth 1  -type f -name "$basenamenoextension"'*.vdi.bak.tmp' | sed "s/\.tmp\$//" | xargs -I '{}' -- mv -f "{}.tmp" '{}'
+    
+    find "$vdibackupdir" -maxdepth 1 -mindepth 1  -type f -name "$basenamenoextension"'*.vdi.bak' | LANG=C sort -r | awk '{if(NR>'$vdibackupstokeep') { print $0; } }' | xargs -I '{}' -- rm -f '{}'
 fi
 
 exit 0

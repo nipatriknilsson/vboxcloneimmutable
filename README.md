@@ -7,10 +7,12 @@ Syntax of calling vboxcloneimmutable.sh is
 vboxcloneimmutable.sh {parent vm} [child vm_1] [child vm_2] [-optionstovbox] [+optionstoscript]
 ```
 
-These are optionstoscript options
+These are the options to the script:
 +storageport=<number> # example: +storageport=0
 +storagedevice=<number> # example: +storagedevice=1
 +storagectl=<name> # example: +storagectl=SATA
++vdibackupstokeep=<number> # example: +vdibackupstokeep=7 # default set to 1. If set to 0, no backup is done.
++vdibackupdir=<path> # alternate path of backup, if not this option is given the backup is in the same directory as the original vdi-file.
 
 The disk's interface is named IDE by default and disk attached to storageport 0 and storagedevice 0:
 
@@ -23,7 +25,7 @@ In sequence the script does the following:
 6) Clone the parent into the child VMs. No limits of the number imposed by the script.
 7) Set the parent VM's disk to NONE, so it is not accidentally run. It is not removed from the host's file system.
 
-Tested on Ubuntu Mate 20.04 (Focal).
+Tested on Ubuntu Mate 22.04.
 
 # Examples
 Remove child VMs named "Ubuntu Mate Focal #1", "Ubuntu Mate Focal #2", "Ubuntu Mate Focal #3" and run "Ubuntu Mate Focal". When parent finished running the child VMs are created again, Mac address 1 is randomized. Parent can't be run to avoid accidental run. The children's disks are set immutable.
