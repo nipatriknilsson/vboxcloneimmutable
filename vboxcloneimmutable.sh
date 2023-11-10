@@ -11,6 +11,8 @@ vdibackupstokeep=1
 
 vdibackupdir=""
 
+maxrunning=4
+
 #vboxbugdelay=10s
 
 declare -a childvms
@@ -49,6 +51,11 @@ while [ "$1" != "" ] ; do
             vdibackupdir=*)
                 vdibackupdir="${1:1}"
                 vdibackupdir=${vdibackupdir:$(expr index "$vdibackupdir" "=")}
+                ;;
+                
+            maxrunning=*)
+                maxrunning="${1:1}"
+                maxrunning=${maxrunning:$(expr index "$maxrunning" "=")}
                 ;;
                 
             *)
@@ -91,6 +98,13 @@ function sleepbuggyvboxdelay()
 }
 
 if [ "${parentvm}" != "" ] ; then
+    parentvmuuid="$(vboxmanage list vms | grep -E "^\"${parentvm}\" " | grep -P -o ".{8}-.{4}-.{4}-.{4}-.{12}")"
+    
+    if [ "${parentvmuuid}" == '' ] ; then
+        echo "Failed to get UUID from ${parentvm}"
+        exit 1
+    fi
+    
     flagfile=$(mktemp)
     
     # Wait for parentvm
@@ -103,7 +117,7 @@ if [ "${parentvm}" != "" ] ; then
             statepoweredoff=""
             stateaborted=""
             statesaved=""
-            running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvm}" || true)
+            running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvmuuid}" || true)
             
             if vboxmanage showvminfo "${parentvm}" 2>/dev/null 1>&2 ; then
                 statepoweredoff=$(vboxmanage showvminfo "${parentvm}" | grep -E -c -i "State:[[:space:]]+powered off" || true)
@@ -286,7 +300,8 @@ if [ "${parentvm}" != "" ] ; then
         
         if [ "$vdibackupstokeep" != "0" ] ; then
             sleepbuggyvboxdelay
-            echo "${vdibackupdir}/$(basename "$parentmedium")" | sed "s/\.vdi\$/\_$(date -r "${parentmedium}" +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress "${parentmedium}" '{}'
+            # --bwlimit=$((80*1024*1024/1024)) 
+            echo "${vdibackupdir}/$(basename "$parentmedium")" | sed "s/\.vdi\$/\_$(date -r "${parentmedium}" +%Y%m%d-%H%M%S)\.vdi\.bak\.tmp/" | xargs -I '{}' -- ionice -c 3 -- rsync -a --progress --bwlimit=$((100*1024*1024/1024)) "${parentmedium}" '{}'
         fi
         
         sleepbuggyvboxdelay
@@ -324,11 +339,13 @@ if [ "${parentvm}" != "" ] ; then
                 if [ "$memoryguestmb" -lt "$memoryhostfree" ] ; then
                     l=$(ps -A -o time,command | grep -i VirtualBoxVM | grep -- "--startvm" | awk '{print $1}' | awk -F: '{ print ($1 * 3600) + ($2 * 60) + $3 }' | sort -V | head -1)
                     
+                    c=$(ps -A -o command | grep -i VirtualBoxVM | grep -- "--startvm" | grep -v grep | wc -l)
+                    
                     if [ "$l" == "" ] ; then
                         break
                     fi
                     
-                    if [ "$l" -gt "120" ] ; then
+                    if [ "$l" -gt "120" ] && [ "$c" -lt "$maxrunning" ] ; then
                         break
                     fi
                 fi
@@ -364,7 +381,7 @@ if [ "${parentvm}" != "" ] ; then
         
         if [ "$statepoweredoff" == "1" ] ; then
             running=
-            running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvm}" || true)
+            running=$(ps -A -o command | grep -v grep | grep 'VirtualBoxVM' | grep -E -c "${parentvmuuid}" || true)
             
             if [ "$running" == "0" ] ; then
                 break

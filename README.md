@@ -13,6 +13,7 @@ These are the options to the script:
 +storagectl=<name> # example: +storagectl=SATA
 +vdibackupstokeep=<number> # example: +vdibackupstokeep=7 # default set to 1. If set to 0, no backup is done.
 +vdibackupdir=<path> # alternate path of backup, if not this option is given the backup is in the same directory as the original vdi-file.
++maxrunning=<number> # max simultaneously running VMs ; default is 4
 
 The disk's interface is named IDE by default and disk attached to storageport 0 and storagedevice 0:
 
